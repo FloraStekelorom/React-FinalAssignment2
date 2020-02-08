@@ -1,23 +1,29 @@
 import React from 'react';
+import Chart from 'chart.js';
 import currencies from './utils/currencies';
 import { checkStatus, json } from './utils/fetchUtils';
 
 class CurrencyConverter extends React.Component {
   constructor(props) {
     super(props);
+
+    const params = new URLSearchParams(props.location.search);
+
     this.state = {
-      rate: 109.55,
-      baseAcronym: 'USD',
-      baseValue: 1,
-      quoteAcronym: 'JPY',
-      quoteValue: 1 * 109.55,
+      rate: 0,
+      baseAcronym: params.get('base') || 'USD',
+      baseValue: 0,
+      quoteAcronym: params.get('quote') || 'JPY',
+      quoteValue: 0,
       loading: false,
     };
+    this.chartRef = React.createRef();
   }
 
   componentDidMount() {
     const { baseAcronym, quoteAcronym } = this.state;
     this.getRate(baseAcronym, quoteAcronym);
+    this.getHistoricalRates(baseAcronym, quoteAcronym);
   }
 
   getRate = (base, quote) => {
@@ -60,6 +66,7 @@ class CurrencyConverter extends React.Component {
     const baseAcronym = event.target.value;
     this.setState({ baseAcronym });
     this.getRate(baseAcronym, this.state.quoteAcronym);
+    this.getHistoricalRates(baseAcronym, this.state.quoteAcronym);
   }
 
   changeBaseValue = (event) => {
@@ -74,6 +81,7 @@ class CurrencyConverter extends React.Component {
     const quoteAcronym = event.target.value;
     this.setState({ quoteAcronym });
     this.getRate(this.state.baseAcronym, quoteAcronym);
+    this.getHistoricalRates(this.state.baseAcronym, quoteAcronym);
   }
 
   changeQuoteValue = (event) => {
@@ -82,6 +90,47 @@ class CurrencyConverter extends React.Component {
       quoteValue: event.target.value,
       baseValue,
     });
+  }
+
+  getHistoricalRates = (base, quote) => {
+    const endDate = new Date().toISOString().split('T')[0];
+    const startDate = new Date((new Date).getTime() - (30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+    fetch(`https://alt-exchange-rate.herokuapp.com/history?start_at=${startDate}&end_at=${endDate}&base=${base}&symbols=${quote}`)
+      .then(checkStatus)
+      .then(json)
+      .then(data => {
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        const chartLabels = Object.keys(data.rates);
+        const chartData = Object.values(data.rates).map(rate => rate[quote]);
+        const chartLabel = `${base}/${quote}`;
+        this.buildChart(chartLabels, chartData, chartLabel);
+      })
+      .catch(error => console.error(error.message));
+  }
+  buildChart = (labels, data, label) => {
+    const chartRef = this.chartRef.current.getContext("2d");
+    if (typeof this.chart !== "undefined") {
+      this.chart.destroy();
+    }
+    this.chart = new Chart(this.chartRef.current.getContext("2d"), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: label,
+            data,
+            fill: false,
+            tension: 0,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+      }
+    })
   }
 
   render() {
@@ -123,6 +172,7 @@ class CurrencyConverter extends React.Component {
             <small className="text-secondary">{currencies[quoteAcronym].name}</small>
           </div>
         </form>
+        <canvas ref={this.chartRef} />
       </React.Fragment>
     )
   }
